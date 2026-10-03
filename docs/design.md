@@ -42,3 +42,46 @@ The design follows a solutions architect process:
 | NFR4 | Security | Only he can view his data in the app; admin access is limited to maintenance. |
 | NFR5 | Reliability | His data is backed up, and past items can be recovered. |
 | NFR6 | Cost | Total monthly cost stays under $15. |
+
+
+## Step 2: Constraints, Assumptions, and Scope
+
+### Constraints
+
+1. Monthly cost must stay under $15.
+2. v1 must be complete by mid-November.
+3. Solo builder with limited Python and AI/ML experience.
+4. Limited weekly build time alongside a full-time job and certification prep.
+5. No Swift experience and no budget for an Apple developer account.
+6. The user is a minor.
+7. Existing AWS account is converting from Free Tier to paid.
+
+### Decisions Driven by Constraints
+
+- **Mobile-friendly web app instead of a native iPhone app** (constraints 1, 3, 5)
+- **Parents informed, plus a privacy notice at account creation** explaining that admin access is for maintenance only (constraint 6)
+- **AWS Budgets alerts and Cost Anomaly Detection set up before building anything** (constraints 1, 7)
+
+### Assumptions
+
+| ID | Assumption | How to Verify |
+|----|------------|---------------|
+| A1 | The Schoology iCal feed works, includes all classes, and updates when teachers change assignments. | Inspect the feed, then recheck after a teacher changes something. |
+| A2 | The feed provides only assignment titles, courses, and due dates. | Inspect the feed. |
+| A3 | The AI can estimate time needed from the course and assignment title, and he'll correct wrong estimates. | Test on real assignment titles and ask him if the estimates feel right. |
+| A4 | He'll actually enter his non-school commitments. | Check after his first week. |
+| A5 | He'll use the app only if it's very simple. | Watch him use it for a week and ask what annoyed him. |
+| A6 | He'll have internet access whenever he uses the app. | Ask where and when he'd check it. |
+| A7 | AI usage for one user fits within the $15 budget. | Track cost daily for the first two weeks. |
+| A8 | Sign-in will use a personal account, since school accounts may block outside apps. | Test sign-in with his account. |
+
+### Out of Scope for v1
+
+- Offline access (v2)
+- Concept coach for free-response practice (v2)
+- Additional users (v2 or later)
+- Gamification (decided after v1 feedback)
+- Native iPhone app
+- Schoology API integration (requires school admin approval)
+- Mistake logging and SAT prep layer (v3)
+- Push notifications, text messages, and reminder preferences for non-school tasks (v2)
