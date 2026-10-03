@@ -85,3 +85,84 @@ The design follows a solutions architect process:
 - Schoology API integration (requires school admin approval)
 - Mistake logging and SAT prep layer (v3)
 - Push notifications, text messages, and reminder preferences for non-school tasks (v2)
+
+
+## Step 3: Components and Data Flow
+
+### Components
+
+| # | Component | Job |
+|---|-----------|-----|
+| 1 | App (front end) | What he sees and taps; reads from the stores when he views a screen |
+| 2 | Sign-in | Confirms who he is |
+| 3 | User Profile Store | Privacy notice acceptance, email address, and settings |
+| 4 | Protected Link Storage | Keeps the Schoology calendar link safe, since it works like a password |
+| 5 | Scheduler | Wakes up parts of the system at set times (2am sync and planning, 5pm reminders) |
+| 6 | Calendar Sync | Fetches the Schoology feed and saves new or changed assignments |
+| 7 | Task Store | Source of truth: assignments, his added items, completions with timestamps, late reasons, submission dates |
+| 8 | Planner (AI) | Reads the Task Store, builds the next 7 days, saves the plan |
+| 9 | Plan Store | Derived data: the finished plan, always rebuildable from the Task Store |
+| 10 | Conflict Check | Warns him when a new item overlaps today's plan |
+| 11 | Reminder Check | Finds unchecked school tasks due tomorrow |
+| 12 | Email Sender | Delivers the reminder email |
+
+### Scenarios
+
+**Scenario 1: Account creation**
+- He opens the app → *App* sends him to *Sign-in* → *Sign-in* confirms him → tells *App* he's verified
+- First time only: *App* shows the privacy notice → he accepts → saved to *User Profile Store*
+- He pastes his Schoology link → saved to *Protected Link Storage*
+
+**Scenario 2: Overnight planning and morning view**
+- At 2am Eastern → *Scheduler* triggers *Calendar Sync*
+- *Calendar Sync* → reads the link from *Protected Link Storage* → fetches the feed → compares it to saved data → saves new or changed assignments to *Task Store*
+- When sync finishes → *Scheduler* triggers *Planner*
+- *Planner* → reads unfinished tasks, deadlines, his added items, and late history from *Task Store* → builds the next 7 days → saves to *Plan Store*
+- In the morning, he opens the app → *Sign-in* → *App* reads today's plan from *Plan Store* (no AI call)
+
+**Scenario 3: He adds a new commitment**
+- He saves it → *Task Store* (no AI call)
+- *Conflict Check* → warns him if it overlaps today's plan
+- *App* → shows it right away when he views that day
+- That night → *Planner* folds it into the plan
+
+**Scenario 4: He checks off a task**
+- He checks it off → saved to *Task Store* as done, with a timestamp → *App* shows it done right away
+- If past due → required "why late" dropdown → reason saved with the task
+- That night → *Planner* skips done tasks and uses late reasons when planning
+
+**Scenario 5: A task goes overdue**
+- *App* → marks a task overdue when displaying it (due date passed, not done; simple rule, no AI)
+- That night → *Planner* moves overdue tasks to the top of the plan
+- Late reason options: already done but forgot to check off, overwhelmed, had to prioritize something else, didn't want to, skipped it, cancelled assignment, already submitted (with submission date), rather not say
+- After 7 days overdue → *App* shows these in a separate "older overdue" view, filtered from *Task Store* rather than copied → *Planner* skips them
+
+**Scenario 6: Reminders**
+- At 5pm → *Scheduler* triggers *Reminder Check*
+- *Reminder Check* → reads *Task Store* for unchecked school tasks due tomorrow → bundles them into one message
+- *Email Sender* → reads his address from *User Profile Store* → sends the email
+
+### Design Principles
+
+- **Precompute the plan overnight.** Opening the app is fast, and the AI is called once per night no matter how often he checks.
+- **User input always goes to the source of truth.** The Plan Store is only ever rebuilt by the Planner.
+- **The Planner only reads the Task Store and only writes to the Plan Store.**
+- **Use AI only where judgment is needed.** Simple rules handle everything else (overdue checks, conflicts, reminders).
+- **One job per component.** If Calendar Sync fails, the Planner still works from existing data.
+- **Filter data instead of copying it**, to keep one source of truth.
+- **Reuse existing components.** The Scheduler handles both nightly planning and reminders.
+- **No background polling for a single user**, to keep costs down.
+
+### UI Ideas
+
+1. Today's schedule is the first screen after sign-in; he can close it to reach the home screen.
+2. Home screen icons: calendar, profile, and a + button to add an item.
+3. Add-item form: day, time, title, and how long it'll take.
+4. Color coding by priority, getting darker and more urgent as deadlines approach.
+5. Overdue items pinned to the top.
+6. One-tap check-off.
+7. "Why late" dropdown when checking off something past due.
+8. "Older overdue" view for tasks more than 7 days late.
+9. Conflict warning when a new item overlaps today's plan.
+10. First sign-in screens: privacy notice, then pasting the Schoology link.
+11. Overall feel: simple and calm, not addictive or gamified.
