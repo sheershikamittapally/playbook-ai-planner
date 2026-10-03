@@ -166,3 +166,33 @@ The design follows a solutions architect process:
 9. Conflict warning when a new item overlaps today's plan.
 10. First sign-in screens: privacy notice, then pasting the Schoology link.
 11. Overall feel: simple and calm, not addictive or gamified.
+
+
+## Step 4: Service Selection
+
+### New Component Identified
+
+**13. API Layer:** the front end can't talk to the data stores directly without exposing the database to the internet, so an API layer sits between the App and everything behind it.
+
+### Service Choices
+
+| # | Component | Service | Why | Alternatives Considered |
+|---|-----------|---------|-----|-------------------------|
+| 1 | App hosting | S3 + CloudFront | Learning how the pieces fit together; more hands-on than a fully managed option | Amplify Hosting |
+| 2 | API layer | API Gateway + Lambda | Serverless and pay-per-request; pairs naturally with the Lambda backend | AppSync (GraphQL adds new learning on a tight timeline) |
+| 3 | Sign-in | Cognito | Supports Google sign-in without storing or handling passwords | Custom login |
+| 4 | User Profile, Task, and Plan Stores | DynamoDB (on-demand, 3 tables) | Serverless, pay-per-request, pennies at one user's scale; three tables keep it simple | RDS/Aurora (always-on, would strain the $15 budget) |
+| 5 | Protected Link Storage | Parameter Store (SecureString) | Standard parameters are free; one secret doesn't justify per-secret pricing | Secrets Manager |
+| 6 | Scheduler | EventBridge Scheduler | Fires only at 2am and 5pm; pay per run with nothing running all day | Cron on an EC2 instance |
+| 7 | Calendar Sync, Planner, Reminder Check, Conflict Check | Lambda | Each job runs seconds to a minute, a few times a day; pay only for run time | EC2, Fargate |
+| 8 | Sync → Planner orchestration | Step Functions | Keeps them decoupled; Planner still runs from existing data if Sync fails | One Lambda calling the next |
+| 9 | Planner AI | Bedrock (Claude Haiku) | Small, fast, good at reasoning; minimal cost at one call per night | Amazon Nova Lite (to be compared on real assignments; tests A3 and A7) |
+| 10 | Email Sender | SES | Sends properly formatted emails; sandbox's verified-recipient limit fits one user | SNS email (plain notification text) |
+
+### Supporting Services
+
+| Purpose | Service | Why |
+|---------|---------|-----|
+| Infrastructure as code | CDK (Python) | Redeploy the full stack with one command; doubles as Python practice |
+| Monitoring | CloudWatch | Logs for every component, plus an alarm that emails me if the 2am run fails |
+| Cost guardrails | AWS Budgets + Cost Anomaly Detection | Alerts before costs get out of hand (alerts warn; they don't stop usage) |
