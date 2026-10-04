@@ -200,7 +200,7 @@ The design follows a solutions architect process:
 
 ## Step 5: Architecture Diagram
 
-![Playbook v1 architecture](Playbook_v1_-_Design_Diagram_drawio.png)
+![Playbook v1 architecture](Playbook%20v1%20-%20Design%20Diagram.drawio.png)
 
 The editable source is in `Playbook_v1_-_Design_Diagram.drawio`.
 
