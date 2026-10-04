@@ -196,3 +196,12 @@ The design follows a solutions architect process:
 | Infrastructure as code | CDK (Python) | Redeploy the full stack with one command; doubles as Python practice |
 | Monitoring | CloudWatch | Logs for every component, plus an alarm that emails me if the 2am run fails |
 | Cost guardrails | AWS Budgets + Cost Anomaly Detection | Alerts before costs get out of hand (alerts warn; they don't stop usage) |
+
+
+## Step 5: Architecture Diagram
+
+![Playbook v1 architecture](Playbook_v1_-_Design_Diagram_drawio.png)
+
+The editable source is in `Playbook_v1_-_Design_Diagram.drawio`.
+
+**Legend:** blue = user requests, orange = 2am planning, green = 5pm reminders, dashed = one-time setup.
