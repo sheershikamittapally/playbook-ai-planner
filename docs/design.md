@@ -205,3 +205,28 @@ The design follows a solutions architect process:
 The editable source is in `Playbook_v1_-_Design_Diagram.drawio`.
 
 **Legend:** blue = user requests, orange = 2am planning, green = 5pm reminders, dashed = one-time setup.
+
+
+## Step 6: Well-Architected Review
+
+| Pillar | How Playbook addresses it | Gap found and fix |
+|--------|---------------------------|-------------------|
+| Operational excellence | CloudWatch alarm on the 2am run; decoupled components so one failure doesn't stop the rest; full stack deployed with CDK | Alarms can't email directly, so an **SNS topic** sends alerts to the admin. **CloudWatch Logs** capture the reason behind failures. |
+| Security | CloudFront is the only way into S3 (Origin Access Control); each Lambda has its own least-privilege IAM role; Schoology link stored as an encrypted SecureString | As designed, anyone with a Google account could sign up. Fix: **Cognito pre sign-up trigger** that allows only one approved email. API calls weren't verified. Fix: **Cognito authorizer** on API Gateway checks the sign-in token on every request. |
+| Reliability | Decoupled design: if Sync or Bedrock fails, the previous plan stays in place | Storing data isn't backing it up. Fix: **Point-in-Time Recovery** on Tasks and User Profile. Plans is derived data and can be rebuilt, so it doesn't need PITR. **Step Functions retries** handle temporary failures before falling back. |
+| Performance efficiency | Plan is precomputed overnight, so opening the app never waits on the AI; CloudFront caches app files at edge locations near the user | No major gaps for one user. |
+| Cost optimization | One AI call per night; DynamoDB on-demand; Lambda pay-per-run; free Parameter Store tier; small model; Budgets and Cost Anomaly Detection alerts | Risks identified: the Planner's prompt growing all year, logs stored indefinitely, and runaway retries. Fixes: **cap planner history to the last 4 weeks**, **30-day log retention**, **retry limits**. |
+| Sustainability | Fully serverless, so nothing runs while idle; small model sized to the task | Nightly planning runs even when nothing changed. Fix: **skip the Planner when there are no new tasks, check-offs, or Schoology updates** (also useful over long breaks). |
+
+### Design Changes from This Review
+
+1. Cognito pre sign-up trigger with a one-email allowlist (new Lambda)
+2. Cognito authorizer on API Gateway
+3. Point-in-Time Recovery on the Tasks and User Profile tables
+4. Step Functions retries before falling back to the previous plan
+5. SNS topic for alarm emails (new)
+6. 30-day CloudWatch log retention
+7. Planner history capped to the last 4 weeks
+8. Skip the nightly Planner run when nothing has changed
+
+**Lesson carried forward:** budget alerts warn but don't stop usage, so cost safety comes from design choices (retry limits, capped prompts, log retention), not alerts alone.
