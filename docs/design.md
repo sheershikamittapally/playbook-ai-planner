@@ -230,3 +230,48 @@ The editable source is in `Playbook_v1_-_Design_Diagram.drawio`.
 8. Skip the nightly Planner run when nothing has changed
 
 **Lesson carried forward:** budget alerts warn but don't stop usage, so cost safety comes from design choices (retry limits, capped prompts, log retention), not alerts alone.
+
+
+## Data Model (DynamoDB)
+
+All tables use on-demand capacity. Keys were chosen from access patterns first, following DynamoDB's "design for how you read" approach.
+
+### User Profile
+
+| Key | Attribute | Notes |
+|-----|-----------|-------|
+| Partition | `user_id` | Cognito user ID (`sub`); never changes |
+
+Other attributes: `email`, `privacy_accepted_at`, `schoology_connected`, `timezone`, `daily_workload_limit`, `created_at`.
+
+- The Schoology link is never stored here; it stays in Parameter Store.
+- **v1 shortcut:** the 5pm Reminder Check reads the whole table, since it holds one user. With more users, reminders would need a different lookup.
+
+### Tasks (source of truth, PITR on)
+
+| Key | Attribute | Notes |
+|-----|-----------|-------|
+| Partition | `user_id` | All of a user's tasks are queried together |
+| Sort | `task_id` | `sch#<Schoology UID>` for feed items, `man#<random id>` for items added in the app |
+
+Other attributes: `source`, `title`, `subject`, `category` (school / extracurricular / personal), `due_date`, `due_time`, `hard_deadline`, `est_minutes`, `status` (open / done / wont_do), `completed_at`, `late_reason`, `submitted_at`, `feed_hash`, `created_at`, `updated_at`.
+
+**Key decisions**
+- **Deterministic IDs for feed items.** Calendar Sync builds the ID from the Schoology UID, so it can find a previously saved assignment with a direct lookup and never creates duplicates (idempotent sync).
+- **`due_date` is not the sort key.** Teachers change due dates, and DynamoDB key values can't be edited. A date key would force delete-and-recreate on every change.
+- **Change detection with `feed_hash`.** The feed has no last-modified field, so Sync stores a fingerprint of each event's title, date, and description and compares it nightly.
+- **Date-based reads** (due on a given day, overdue, due tomorrow) query the user's tasks and filter in code. Fine at one student's scale (a few hundred tasks a year). **v2 upgrade path:** a Global Secondary Index on `user_id` + `due_date`.
+
+### Plans (derived data, no PITR)
+
+| Key | Attribute | Notes |
+|-----|-----------|-------|
+| Partition | `user_id` | |
+| Sort | `plan_date` | `YYYY-MM-DD`; sorts correctly as text |
+
+Other attributes: `blocks` (the day's scheduled items), `generated_at`, `model_id`, `expires_at`.
+
+- **One item per day.** Today's plan is a single direct read; a week is one range query.
+- **A date key is safe here** because a plan's date never changes.
+- **TTL on `expires_at`** automatically deletes plans after about 30 days. Plans can always be rebuilt from Tasks, so no backups are needed.
+- The Planner overwrites each day's item nightly.
