@@ -6,15 +6,19 @@ from datetime import (
 from zoneinfo import ZoneInfo
 import hashlib
 import boto3
+import os
+import urllib.request
 
-table = boto3.Session(profile_name="playbook").resource("dynamodb", region_name="us-east-1").Table("InfraStack-TasksTable88911DC5-1OGDJK5KQCYJ9")
+table = boto3.resource("dynamodb", region_name="us-east-1").Table(os.environ["TABLE_NAME"])
+ssm = boto3.client("ssm", region_name="us-east-1")
 cutoff = date(2026, 8, 1)
 USER_ID = "dev_user"
 
 def lambda_handler(event, context):
-    with open("/Users/sheershikamittapally/Downloads/ical.ics", "rb") as f:
-        data = f.read()
-        cal = Calendar.from_ical(data)
+    response = ssm.get_parameter(Name="/playbook/schoology-feed-url", WithDecryption=True)
+    link = response["Parameter"]["Value"]
+    data = urllib.request.urlopen(link, timeout=10).read()
+    cal = Calendar.from_ical(data)
 
     new_count = 0
     changed_count = 0
@@ -57,4 +61,5 @@ def lambda_handler(event, context):
     print("new:", new_count, "changed:", changed_count, "unchanged:", unchanged_count)
     return {"new": new_count, "changed": changed_count, "unchanged": unchanged_count}
 
-lambda_handler({}, None)
+if __name__ == "__main__":
+    lambda_handler({}, None)

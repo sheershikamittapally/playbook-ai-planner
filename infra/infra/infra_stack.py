@@ -3,7 +3,10 @@ from aws_cdk import (
     Stack,
     # aws_sqs as sqs,
     aws_dynamodb as dynamodb,
-    RemovalPolicy
+    RemovalPolicy,
+    aws_lambda as _lambda,
+    aws_ssm as ssm,
+    Duration
 )
 from constructs import Construct
 
@@ -31,11 +34,26 @@ class InfraStack(Stack):
                     time_to_live_attribute="expires_at",
                     removal_policy=RemovalPolicy.DESTROY
                 )
+        icalendar_layer = _lambda.LayerVersion(
+            self, "IcalendarLayer",
+            code=_lambda.Code.from_asset("layers/icalendar"),
+            compatible_runtimes=[_lambda.Runtime.PYTHON_3_12]
+        )
 
-        # The code that defines your stack goes here
+        calendar_sync_fn = _lambda.Function(
+            self, "CalendarSyncFunction",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            handler="sync.lambda_handler",
+            code=_lambda.Code.from_asset("lambdas/calendar_sync"),
+            layers=[icalendar_layer],
+            timeout=Duration.seconds(60),
+            environment={"TABLE_NAME": tasks_table.table_name}
+        )
 
-        # example resource
-        # queue = sqs.Queue(
-        #     self, "InfraQueue",
-        #     visibility_timeout=Duration.seconds(300),
-        # )
+        feed_url_param = ssm.StringParameter.from_secure_string_parameter_attributes(
+            self, "FeedUrlParam",
+            parameter_name="/playbook/schoology-feed-url"
+        )
+
+        tasks_table.grant_read_write_data(calendar_sync_fn)
+        feed_url_param.grant_read(calendar_sync_fn)
