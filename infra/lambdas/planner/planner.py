@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import json
 
 table = boto3.resource("dynamodb", region_name="us-east-1").Table(os.environ["TABLE_NAME"])
+bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 USER_ID = "dev_user"
 
 def lambda_handler(event, context):
@@ -53,10 +54,18 @@ def lambda_handler(event, context):
               .replace("{today}", date_today.isoformat())
               .replace("{tasks}", tasks_json)
               .replace("{late_history}", "[]"))
+
+    response = bedrock.converse(
+        modelId="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        inferenceConfig={"temperature": 0, "maxTokens": 2000}
+    )
+
+    reply_text = response["output"]["message"]["content"][0]["text"]
     
     print(len(open_tasks))
-    print(prompt)
-    return prompt
+    print(reply_text, response["usage"])
+    return reply_text
 
 if __name__ == "__main__":
     lambda_handler({}, None)
