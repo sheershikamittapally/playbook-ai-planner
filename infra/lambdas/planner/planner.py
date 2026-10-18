@@ -6,6 +6,7 @@ from datetime import (
     timedelta
 )
 from zoneinfo import ZoneInfo
+import json
 
 table = boto3.resource("dynamodb", region_name="us-east-1").Table(os.environ["TABLE_NAME"])
 USER_ID = "dev_user"
@@ -16,6 +17,7 @@ def lambda_handler(event, context):
     items = table.query(KeyConditionExpression=Key("user_id").eq(USER_ID)).get("Items", [])
 
     open_tasks = []
+    ai_tasks = []
     for x in items:
         if x.get("status") != "open":
             continue
@@ -32,12 +34,29 @@ def lambda_handler(event, context):
             "title": x["title"],
             "subject": x.get("subject", ""),
             "due_by": x["due_date"],
-            "remaining_minutes": remaining_minutes,
+            "remaining_minutes": remaining_minutes
+        })
+        ai_tasks.append({
+            "task_id": x["task_id"],
+            "title": x["title"],
+            "subject": x.get("subject", ""),
+            "remaining_minutes": remaining_minutes
         })
 
+    tasks_json = json.dumps(ai_tasks)
+    
+    prompt_path = os.path.join(os.path.dirname(__file__), "prompt.txt")
+    with open(prompt_path, "r") as f:
+        template = f.read()
+        
+    prompt = (template
+              .replace("{today}", date_today.isoformat())
+              .replace("{tasks}", tasks_json)
+              .replace("{late_history}", "[]"))
+    
     print(len(open_tasks))
-    print(open_tasks)
-    return open_tasks
+    print(prompt)
+    return prompt
 
 if __name__ == "__main__":
     lambda_handler({}, None)
