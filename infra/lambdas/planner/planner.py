@@ -49,6 +49,9 @@ def build_schedule(open_tasks, judgements, today):
             "blocks": []
         })
 
+    work[0]["minutes"] = 200
+
+    overflow = []
     for w in work:
         left = w["minutes"]
         last = (w["target"] - today).days
@@ -56,22 +59,41 @@ def build_schedule(open_tasks, judgements, today):
             last = 0
         if last > 6:
             last = 6
+        placed = []
         for day in days[0 : last + 1]:
-            if left ==0:
+            if left == 0:
                 break
             chunk = min(60, left, day["left"])
             if chunk > 0:
-                day["blocks"].append({
+                block = {
                     "task_id": w["task_id"],
                     "minutes_today": chunk,
                     "estimated": w["estimated"],
                     "note": w["note"],
-                })
+                }
+                day["blocks"].append(block)
+                placed.append(block)
                 left -= chunk
                 day["left"] -= chunk
-        if left > 0:
-            print("could not fit", w["task_id"], left)
     
+        overflow.append((w, last, left, placed))
+    
+    for w, last, left, placed in overflow:
+        if left > 0:
+            block = {
+                "task_id": w["task_id"],
+                "minutes_today": left,
+                "estimated": w["estimated"],
+                "note": "Over limit",
+            }
+            days[last]["blocks"].append(block)
+            placed.append(block)
+            days[last]["left"] -= left
+        if len(placed) > 1:
+            for i, b in enumerate(placed, start=1):
+                if b["note"] != "Over limit":
+                    b["note"] = f"Part {i} of {len(placed)}"
+
     print(days)
     return days
 
