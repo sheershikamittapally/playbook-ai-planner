@@ -47,8 +47,31 @@ def build_schedule(open_tasks, judgements, today):
             "date": d.isoformat(),
             "left": limit,
             "blocks": []
-        }) 
+        })
 
+    for w in work:
+        left = w["minutes"]
+        last = (w["target"] - today).days
+        if last < 0:
+            last = 0
+        if last > 6:
+            last = 6
+        for day in days[0 : last + 1]:
+            if left ==0:
+                break
+            chunk = min(60, left, day["left"])
+            if chunk > 0:
+                day["blocks"].append({
+                    "task_id": w["task_id"],
+                    "minutes_today": chunk,
+                    "estimated": w["estimated"],
+                    "note": w["note"],
+                })
+                left -= chunk
+                day["left"] -= chunk
+        if left > 0:
+            print("could not fit", w["task_id"], left)
+    
     print(days)
     return days
 
