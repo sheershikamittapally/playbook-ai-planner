@@ -38,8 +38,19 @@ def build_schedule(open_tasks, judgements, today):
         })
 
     work.sort(key=lambda w: w["target"])
-    print(work)
-    return work
+
+    days = []
+    for i in range(7):
+        d = today + timedelta(days=i)
+        limit = 150 if d.weekday() < 5 else 180
+        days.append({
+            "date": d.isoformat(),
+            "left": limit,
+            "blocks": []
+        }) 
+
+    print(days)
+    return days
 
 def lambda_handler(event, context):
     date_today = datetime.now(ZoneInfo("America/New_York")).date()
