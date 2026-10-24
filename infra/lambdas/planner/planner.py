@@ -8,9 +8,11 @@ from datetime import (
 from zoneinfo import ZoneInfo
 import json
 
-table = boto3.resource("dynamodb", region_name="us-east-1").Table(os.environ["TABLE_NAME"])
+tasks_table = boto3.resource("dynamodb", region_name="us-east-1").Table(os.environ["TABLE_NAME"])
+plans_table = boto3.resource("dynamodb", region_name="us-east-1").Table(os.environ["PLANS_TABLE"])
 bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 USER_ID = "dev_user"
+MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 def build_schedule(open_tasks, judgements, today):
     work = []
@@ -31,7 +33,7 @@ def build_schedule(open_tasks, judgements, today):
         
         work.append({
             "task_id": t["task_id"],
-            "minutes": minutes,
+            "minutes": int(minutes),
             "estimated": estimated,
             "target": target,
             "note": j.get("note", ""),
@@ -98,7 +100,7 @@ def build_schedule(open_tasks, judgements, today):
 def lambda_handler(event, context):
     date_today = datetime.now(ZoneInfo("America/New_York")).date()
     overdue_cutoff = date_today - timedelta(days=7)
-    items = table.query(KeyConditionExpression=Key("user_id").eq(USER_ID)).get("Items", [])
+    items = tasks_table.query(KeyConditionExpression=Key("user_id").eq(USER_ID)).get("Items", [])
 
     open_tasks = []
     ai_tasks = []
@@ -139,7 +141,7 @@ def lambda_handler(event, context):
               .replace("{late_history}", "[]"))
 
     response = bedrock.converse(
-        modelId="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        modelId=MODEL_ID,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         inferenceConfig={"temperature": 0, "maxTokens": 2000}
     )
@@ -173,8 +175,23 @@ def lambda_handler(event, context):
     
     print(len(judgements), "of", len(open_tasks), "tasks passed validation")
 
-    work = build_schedule(open_tasks, judgements, date_today)
-    return work
+    days = build_schedule(open_tasks, judgements, date_today)
+    now = datetime.now(ZoneInfo("UTC"))
+    generated_at = now.isoformat()
+    expires_at = int((now + timedelta(days=30)).timestamp())
+
+    with plans_table.batch_writer() as batch:
+        for day in days:
+            batch.put_item(Item={
+                "user_id": USER_ID,
+                "plan_date": day["date"],
+                "blocks": day["blocks"],
+                "generated_at": generated_at,
+                "model_id": MODEL_ID,
+                "expires_at": expires_at
+            })
+    print("wrote", len(days), "days")
+    return days
 
 if __name__ == "__main__":
     lambda_handler({}, None)
