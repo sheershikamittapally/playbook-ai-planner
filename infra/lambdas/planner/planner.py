@@ -49,8 +49,6 @@ def build_schedule(open_tasks, judgements, today):
             "blocks": []
         })
 
-    work[0]["minutes"] = 200
-
     overflow = []
     for w in work:
         left = w["minutes"]
