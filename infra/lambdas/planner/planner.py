@@ -63,9 +63,34 @@ def lambda_handler(event, context):
 
     reply_text = response["output"]["message"]["content"][0]["text"]
     
-    print(len(open_tasks))
-    print(reply_text, response["usage"])
-    return reply_text
+    start = reply_text.find("[")
+    end = reply_text.rfind("]") + 1
+    clean = reply_text[start:end]
+
+    try:
+        parsed = json.loads(clean)
+    except json.JSONDecodeError:
+        print("invalid JSON:", reply_text)
+        return {}
+
+    if not isinstance(parsed, list):
+        print("expected a list, got:", type(parsed))
+        return {}
+
+    valid_ids = {t["task_id"] for t in open_tasks}
+    judgements = {}
+    for item in parsed:
+            if item.get("task_id") not in valid_ids:
+                continue
+            if not isinstance(item.get("start_early"), bool):
+                continue
+            if "est_minutes" in item and not isinstance(item["est_minutes"], (int, float)):
+                continue
+            judgements[item["task_id"]] = item
+    
+    print(len(judgements), "of", len(open_tasks), "tasks passed validation")
+    print(judgements)
+    return judgements
 
 if __name__ == "__main__":
     lambda_handler({}, None)
