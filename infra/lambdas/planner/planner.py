@@ -12,6 +12,35 @@ table = boto3.resource("dynamodb", region_name="us-east-1").Table(os.environ["TA
 bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 USER_ID = "dev_user"
 
+def build_schedule(open_tasks, judgements, today):
+    work = []
+    for t in open_tasks:
+        j = judgements.get(t["task_id"], {})
+        if t["remaining_minutes"] is not None:
+            minutes = t["remaining_minutes"]
+            estimated = False
+        else:
+            minutes = j.get("est_minutes")
+            estimated = True
+            if minutes is None:
+                minutes = 30
+                estimated = True
+        target = date.fromisoformat(t["due_by"])
+        if j.get("start_early") is True:
+            target = target - timedelta(days=1)
+        
+        work.append({
+            "task_id": t["task_id"],
+            "minutes": minutes,
+            "estimated": estimated,
+            "target": target,
+            "note": j.get("note", ""),
+        })
+
+    work.sort(key=lambda w: w["target"])
+    print(work)
+    return work
+
 def lambda_handler(event, context):
     date_today = datetime.now(ZoneInfo("America/New_York")).date()
     overdue_cutoff = date_today - timedelta(days=7)
@@ -89,8 +118,9 @@ def lambda_handler(event, context):
             judgements[item["task_id"]] = item
     
     print(len(judgements), "of", len(open_tasks), "tasks passed validation")
-    print(judgements)
-    return judgements
+
+    work = build_schedule(open_tasks, judgements, date_today)
+    return work
 
 if __name__ == "__main__":
     lambda_handler({}, None)
