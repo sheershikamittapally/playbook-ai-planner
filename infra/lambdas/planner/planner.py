@@ -80,11 +80,15 @@ def build_schedule(open_tasks, judgements, today):
     
     for w, last, left, placed in overflow:
         if left > 0:
+            if days[last]["left"] >= left:
+                note = w["note"]
+            else:
+                note = "Over limit"
             block = {
                 "task_id": w["task_id"],
                 "minutes_today": left,
                 "estimated": w["estimated"],
-                "note": "Over limit",
+                "note": note,
             }
             days[last]["blocks"].append(block)
             placed.append(block)
@@ -129,6 +133,21 @@ def lambda_handler(event, context):
             "remaining_minutes": remaining_minutes
         })
 
+    late_history = []
+    for x in items:
+        if not x.get("late_reason"):
+            continue
+        if isinstance(x.get("completed_at")):
+            continue
+        if date.fromisoformat(x["completed_at"][:10]) < date_today - timedelta(days=28):
+            continue
+
+        late_history.append({
+            "subject": (x.get("subject", "")),
+            "late_reason": (x.get("late_reason", ""))
+        })
+    print("late history:", late_history)
+
     tasks_json = json.dumps(ai_tasks)
     
     prompt_path = os.path.join(os.path.dirname(__file__), "prompt.txt")
@@ -138,7 +157,7 @@ def lambda_handler(event, context):
     prompt = (template
               .replace("{today}", date_today.isoformat())
               .replace("{tasks}", tasks_json)
-              .replace("{late_history}", "[]"))
+              .replace("{late_history}", json.dumps(late_history)))
 
     response = bedrock.converse(
         modelId=MODEL_ID,
