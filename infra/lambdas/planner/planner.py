@@ -101,6 +101,42 @@ def build_schedule(open_tasks, judgements, today):
     print(days)
     return days
 
+def ask_ai(prompt, valid_ids):
+    response = bedrock.converse(
+            modelId=MODEL_ID,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"temperature": 0, "maxTokens": 2000}
+        )
+    
+    reply_text = response["output"]["message"]["content"][0]["text"]
+        
+    start = reply_text.find("[")
+    end = reply_text.rfind("]") + 1
+    clean = reply_text[start:end]
+    
+    try:
+        parsed = json.loads(clean)
+    except json.JSONDecodeError:
+        print("invalid JSON:", reply_text)
+        return None
+    
+    if not isinstance(parsed, list):
+        print("expected a list, got:", type(parsed))
+        return None
+    
+    judgements = {}
+    for item in parsed:
+            if item.get("task_id") not in valid_ids:
+                continue
+            if not isinstance(item.get("start_early"), bool):
+                continue
+            if "est_minutes" in item and not isinstance(item["est_minutes"], (int, float)):
+                    continue
+            judgements[item["task_id"]] = item
+    
+    return judgements
+
+
 def lambda_handler(event, context):
     date_today = datetime.now(ZoneInfo("America/New_York")).date()
     overdue_cutoff = date_today - timedelta(days=7)
@@ -137,7 +173,7 @@ def lambda_handler(event, context):
     for x in items:
         if not x.get("late_reason"):
             continue
-        if isinstance(x.get("completed_at")):
+        if not x.get("completed_at"):
             continue
         if date.fromisoformat(x["completed_at"][:10]) < date_today - timedelta(days=28):
             continue
@@ -159,38 +195,18 @@ def lambda_handler(event, context):
               .replace("{tasks}", tasks_json)
               .replace("{late_history}", json.dumps(late_history)))
 
-    response = bedrock.converse(
-        modelId=MODEL_ID,
-        messages=[{"role": "user", "content": [{"text": prompt}]}],
-        inferenceConfig={"temperature": 0, "maxTokens": 2000}
-    )
-
-    reply_text = response["output"]["message"]["content"][0]["text"]
-    
-    start = reply_text.find("[")
-    end = reply_text.rfind("]") + 1
-    clean = reply_text[start:end]
-
-    try:
-        parsed = json.loads(clean)
-    except json.JSONDecodeError:
-        print("invalid JSON:", reply_text)
-        return {}
-
-    if not isinstance(parsed, list):
-        print("expected a list, got:", type(parsed))
-        return {}
-
     valid_ids = {t["task_id"] for t in open_tasks}
-    judgements = {}
-    for item in parsed:
-            if item.get("task_id") not in valid_ids:
-                continue
-            if not isinstance(item.get("start_early"), bool):
-                continue
-            if "est_minutes" in item and not isinstance(item["est_minutes"], (int, float)):
-                continue
-            judgements[item["task_id"]] = item
+
+    judgements = None
+    for attempt in range(2):
+        judgements = ask_ai(prompt, valid_ids)
+        if judgements is not None:
+            break
+        print("attempt", attempt + 1, "failed")
+
+    if judgements is None:
+        print("AI failed twice, keeping previous plan")
+        return {"status": "kept_previous_plan"}
     
     print(len(judgements), "of", len(open_tasks), "tasks passed validation")
 
