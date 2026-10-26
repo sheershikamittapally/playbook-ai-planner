@@ -62,7 +62,7 @@ class InfraStack(Stack):
         )
 
         tasks_table.grant_read_data(planner_fn)
-        plans_table.grant_write_data(planner_fn)
+        plans_table.grant_read_write_data(planner_fn)
 
         feed_url_param = ssm.StringParameter.from_secure_string_parameter_attributes(
             self, "FeedUrlParam",

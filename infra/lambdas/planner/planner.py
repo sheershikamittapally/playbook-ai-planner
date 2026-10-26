@@ -7,6 +7,7 @@ from datetime import (
 )
 from zoneinfo import ZoneInfo
 import json
+import hashlib
 
 tasks_table = boto3.resource("dynamodb", region_name="us-east-1").Table(os.environ["TABLE_NAME"])
 plans_table = boto3.resource("dynamodb", region_name="us-east-1").Table(os.environ["PLANS_TABLE"])
@@ -195,18 +196,32 @@ def lambda_handler(event, context):
               .replace("{tasks}", tasks_json)
               .replace("{late_history}", json.dumps(late_history)))
 
+    text = json.dumps({"tasks": ai_tasks, "late_history": late_history}, sort_keys=True)
+    input_hash = hashlib.sha256(text.encode()).hexdigest()
+    meta = plans_table.get_item(Key={"user_id": USER_ID, "plan_date": "meta"}).get("Item")
+
     valid_ids = {t["task_id"] for t in open_tasks}
 
-    judgements = None
-    for attempt in range(2):
-        judgements = ask_ai(prompt, valid_ids)
-        if judgements is not None:
-            break
-        print("attempt", attempt + 1, "failed")
+    if meta and meta.get("input_hash") == input_hash and "judgements" in meta:
+        judgements = json.loads(meta["judgements"])
+        print("inputs unchanged, reusing judgements (no Bedrock call)")
+    else:
+        judgements = None
+        for attempt in range(2):
+            judgements = ask_ai(prompt, valid_ids)
+            if judgements is not None:
+                break
+            print("attempt", attempt + 1, "failed")
 
-    if judgements is None:
-        print("AI failed twice, keeping previous plan")
-        return {"status": "kept_previous_plan"}
+        if judgements is None:
+            print("AI failed twice, keeping previous plan")
+            return {"status": "kept_previous_plan"}
+        plans_table.put_item(Item={
+            "user_id": USER_ID,
+            "plan_date": "meta",
+            "input_hash": input_hash,
+            "judgements": json.dumps(judgements),
+        })
     
     print(len(judgements), "of", len(open_tasks), "tasks passed validation")
 
