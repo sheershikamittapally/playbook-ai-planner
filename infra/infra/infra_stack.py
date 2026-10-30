@@ -9,7 +9,10 @@ from aws_cdk import (
     Duration,
     aws_iam as iam,
     aws_stepfunctions as sfn,
-    aws_stepfunctions_tasks as tasks
+    aws_stepfunctions_tasks as tasks,
+    aws_scheduler as scheduler,
+    aws_scheduler_targets as scheduler_targets,
+    TimeZone,
 )
 from constructs import Construct
 
@@ -106,4 +109,13 @@ class InfraStack(Stack):
             self, "NightlyWorkflow",
             definition_body=sfn.DefinitionBody.from_chainable(definition),
             timeout=Duration.minutes(10)
+        )
+
+        scheduler.Schedule(
+            self, "NightlySchedule",
+            schedule=scheduler.ScheduleExpression.cron(
+                minute="0", hour="2", time_zone=TimeZone.AMERICA_NEW_YORK
+            ),
+            target=scheduler_targets.StepFunctionsStartExecution(nightly_workflow),
+            description="Nightly calendar sync + plan at 2am Eastern",
         )
