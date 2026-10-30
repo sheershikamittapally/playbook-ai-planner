@@ -7,7 +7,9 @@ from aws_cdk import (
     aws_lambda as _lambda,
     aws_ssm as ssm,
     Duration,
-    aws_iam as iam
+    aws_iam as iam,
+    aws_stepfunctions as sfn,
+    aws_stepfunctions_tasks as tasks
 )
 from constructs import Construct
 
@@ -79,3 +81,29 @@ class InfraStack(Stack):
                 "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
                 ],
         ))
+
+        sync_step = tasks.LambdaInvoke(self, "SyncStep", lambda_function=calendar_sync_fn)
+        planner_step = tasks.LambdaInvoke(self, "PlannerStep", lambda_function=planner_fn)
+
+        sync_step.add_retry(
+            errors=["States.ALL"],
+            max_attempts=2,
+            interval=Duration.seconds(30),
+            backoff_rate=2
+        )
+
+        planner_step.add_retry(
+                    errors=["States.ALL"],
+                    max_attempts=2,
+                    interval=Duration.seconds(30),
+                    backoff_rate=2
+                )
+
+        sync_step.add_catch(planner_step, result_path="$.sync_error")
+
+        definition = sync_step.next(planner_step)
+        nightly_workflow = sfn.StateMachine(
+            self, "NightlyWorkflow",
+            definition_body=sfn.DefinitionBody.from_chainable(definition),
+            timeout=Duration.minutes(10)
+        )
