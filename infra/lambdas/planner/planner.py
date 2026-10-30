@@ -215,7 +215,7 @@ def lambda_handler(event, context):
 
         if judgements is None:
             print("AI failed twice, keeping previous plan")
-            return {"status": "kept_previous_plan"}
+            raise RuntimeError("AI failed twice; previous plan kept")
         plans_table.put_item(Item={
             "user_id": USER_ID,
             "plan_date": "meta",

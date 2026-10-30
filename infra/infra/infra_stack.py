@@ -13,6 +13,11 @@ from aws_cdk import (
     aws_scheduler as scheduler,
     aws_scheduler_targets as scheduler_targets,
     TimeZone,
+    aws_sns as sns,
+    aws_sns_subscriptions as subs,
+    aws_cloudwatch as cloudwatch,
+    aws_cloudwatch_actions as cw_actions,
+    aws_logs as logs,
 )
 from constructs import Construct
 
@@ -46,6 +51,9 @@ class InfraStack(Stack):
             compatible_runtimes=[_lambda.Runtime.PYTHON_3_12]
         )
 
+        sync_logs = logs.LogGroup(self, "SyncLogs", retention=logs.RetentionDays.ONE_MONTH, removal_policy=RemovalPolicy.DESTROY)
+        planner_logs = logs.LogGroup(self, "PlannerLogs", retention=logs.RetentionDays.ONE_MONTH, removal_policy=RemovalPolicy.DESTROY)
+        
         calendar_sync_fn = _lambda.Function(
             self, "CalendarSyncFunction",
             runtime=_lambda.Runtime.PYTHON_3_12,
@@ -53,7 +61,8 @@ class InfraStack(Stack):
             code=_lambda.Code.from_asset("lambdas/calendar_sync"),
             layers=[icalendar_layer],
             timeout=Duration.seconds(60),
-            environment={"TABLE_NAME": tasks_table.table_name}
+            environment={"TABLE_NAME": tasks_table.table_name},
+            log_group=sync_logs,
         )
 
         planner_fn = _lambda.Function(
@@ -63,7 +72,8 @@ class InfraStack(Stack):
             code=_lambda.Code.from_asset("lambdas/planner"),
             timeout=Duration.seconds(60),
             environment={"TABLE_NAME": tasks_table.table_name, "PLANS_TABLE": plans_table.table_name},
-            layers=[icalendar_layer]
+            layers=[icalendar_layer],
+            log_group=planner_logs,
         )
 
         tasks_table.grant_read_data(planner_fn)
@@ -119,3 +129,28 @@ class InfraStack(Stack):
             target=scheduler_targets.StepFunctionsStartExecution(nightly_workflow),
             description="Nightly calendar sync + plan at 2am Eastern",
         )
+
+        alert_email = self.node.try_get_context("alert_email")
+        alerts_topic = sns.Topic(self, "AlertsTopic")
+        if alert_email:
+            alerts_topic.add_subscription(subs.EmailSubscription(alert_email))
+
+        workflow_alarm = cloudwatch.Alarm(
+            self, "WorkflowFailedAlarm",
+            metric=nightly_workflow.metric_failed(period=Duration.hours(1)),
+            threshold=1,
+            evaluation_periods=1,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+        )
+        workflow_alarm.add_alarm_action(cw_actions.SnsAction(alerts_topic))
+
+        sync_alarm = cloudwatch.Alarm(
+            self, "SyncErrorsAlarm",
+            metric=calendar_sync_fn.metric_errors(period=Duration.hours(1)),
+            threshold=1,
+            evaluation_periods=1,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+        )
+        sync_alarm.add_alarm_action(cw_actions.SnsAction(alerts_topic))
